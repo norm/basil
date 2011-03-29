@@ -1,0 +1,142 @@
+#!/usr/bin/env perl
+
+use Modern::Perl;
+
+use Getopt::Long    qw( :config bundling );
+use IO::All         -utf8;
+use Plack::Builder;
+use Plack::Request;
+use Plack::Runner;
+use Pod::Usage;
+use Text::Markdown  qw( markdown );
+
+use constant OPTIONS => qw(
+      help|h
+    source|s=s
+      port|p=i
+);
+use constant REQUIRED_OPTIONS => qw( source );
+use constant DEFAULT_PORT => 2275;
+
+
+my %option = get_options_or_exit( port => DEFAULT_PORT );
+my $runner = Plack::Runner->new();
+$runner->parse_options( '-p', $option{'port'} );
+
+
+
+my $wiki_page = render_wiki_page();
+my $builder = Plack::Builder->new();
+$builder->add_middleware(
+        'Static',
+        path         => qr{^/},
+        root         => $option{'source'},
+        pass_through => 1,
+    );
+my $app = $builder->mount( '/' => $wiki_page );
+$runner->run( $builder->to_app( $app ) );
+exit;
+
+
+sub render_wiki_page {
+    return sub {
+        my $env = shift;
+
+        my $request = Plack::Request->new( $env );
+        my $path    = $request->path;
+        my $file    = sprintf "%s%s.markdown",
+                          $option{'source'},
+                          $path,
+                          ".markdown";
+        
+        my $io = io $file;
+        
+        if ( $io->exists && $io->is_file ) {
+            my $wiki_links = qr{
+                    \[\[ \s*
+                      ( [^\]\|]+? )         # $1: the text of the link
+                      (?:
+                          \s* \| \s*
+                          (.*?)             # $2: (optional) link URL
+                      )?
+                    \s* \]\]
+                }x;
+            
+            my $content = $io->all;
+            
+            while ( $content =~ m{$wiki_links} ) {
+                my $text = $1;
+                my $url  = $2 // $text;
+                
+                if ( $url =~ m{\s} ) {
+                    $url =~ tr/A-Z/a-z/;
+                    $url =~ s{\s+}{-}gs;
+                }
+                
+                $content =~ s{$wiki_links}{[$text]($url)};
+            }
+            
+            return [
+                200,
+                [
+                    'Content-Type' => 'text/html',
+                ],
+                [
+                    markdown( $content ),
+                ],
+            ];
+        }
+        else {
+            return [
+                404,
+                [
+                    'Content-Type' => 'text/plain',
+                ],
+                [
+                    "$path does not exist.\n",
+                ],
+            ]
+        }
+    };
+}
+
+sub get_options_or_exit {
+    my %getopts = @_;
+    
+    my $known = GetOptions( \%getopts, OPTIONS );
+    my $usage = ! $known || $getopts{'help'};
+    
+    foreach my $key ( REQUIRED_OPTIONS ) {
+        $usage = 1
+            unless defined $getopts{ $key };
+    }
+    
+    pod2usage() if $usage;
+    
+    return %getopts;
+}
+
+__END__
+
+=head1 NAME
+
+B<thingy> - does stuff
+
+=head1 SYNOPSIS
+
+B<thingy> B<-h>
+    
+=head1 DESCRIPTION
+
+Does stuff.
+
+=head1 AUTHOR
+
+Mark Norman Francis, L<norm@cackhanded.net>.
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2011 Mark Norman Francis.
+
+This library is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
