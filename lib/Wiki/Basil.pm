@@ -138,6 +138,50 @@ sub page_to_filename {
                 ".markdown";
 }
 
+sub list_pages {
+    my $self = shift;
+    
+    my @pages = $self->scan_directory( $self->{'source' } );
+    return map {
+            s{ \.markdown $}{}x;
+            $_;
+        } grep {
+            m{ \.markdown $}x
+        }
+        @pages;
+}
+sub scan_directory {
+    my $self      = shift;
+    my $directory = shift;
+    
+    my $source = $self->{'source'};
+    my @found = $self->traverse_directory( $directory );
+    return map {
+            s{^ $source }{}x;
+            $_;
+        } @found;
+}
+sub traverse_directory {
+    my $self      = shift;
+    my $directory = shift;
+    
+    my @files;
+    opendir( my $handle, $directory );
+    while ( my $entry = readdir $handle ) {
+        next if '.' eq substr $entry, 0, 1;
+        
+        my $filename = "${directory}/${entry}";
+        if ( -f $filename ) {
+            push @files, $filename;
+        }
+        elsif ( -d $filename ) {
+            push @files, $self->traverse_directory( $filename );
+        }
+    }
+    
+    return @files;
+}
+
 sub jigsaw {
     my $self = shift;
     return $self->{'jigsaw'};
