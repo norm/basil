@@ -20,6 +20,10 @@ sub new {
     
     $self->{'source'}    = delete $args{'source'}    // 'source';
     $self->{'templates'} = delete $args{'templates'} // 'templates';
+    $self->{'git'}       = delete $args{'git'}       // '.git';
+    
+    $ENV{'GIT_DIR'} = $self->{'git'}
+        if -d $self->{'git'};
     
     $self->{'jigsaw'} = Template::Jigsaw->new( $self->{'templates'} );
     
@@ -107,6 +111,8 @@ sub update_wiki_page {
     
     $self->write_wiki_page( $page, $content )
         or return;
+    
+    $self->check_change_into_git( $page, $content, $reason );
 }
 sub write_wiki_page {
     my $self    = shift;
@@ -123,6 +129,29 @@ sub write_wiki_page {
     
     $io->print( $content )
         unless $io->exists && ! $io->is_file;
+}
+sub check_change_into_git {
+    my $self    = shift;
+    my $page    = shift;
+    my $content = shift;
+    my $reason  = shift;
+    
+    my $git = $self->{'git'};
+    return unless defined $git;
+    
+    my $file = $self->page_to_filename( $page );
+    system(
+            'git',
+            'add',
+            $file,
+        );
+    system(
+            'git',
+            'commit',
+            '-m',
+            $reason,
+            $file,
+        );
 }
 
 sub page_to_filename {
