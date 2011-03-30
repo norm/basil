@@ -2,6 +2,9 @@ package Wiki::Basil;
 
 use Modern::Perl;
 
+use File::Basename;
+use File::Path;
+use HTML::Entities;
 use IO::All             -utf8;
 use Template::Jigsaw;
 use Text::Markdown      qw( markdown );
@@ -24,19 +27,26 @@ sub new {
 }
 
 sub render_wiki_page {
-    my $self = shift;
-    my $page = shift;
+    my $self   = shift;
+    my $page   = shift;
+    my $action = shift // 'view';
     
-    my $content = $self->get_wiki_source( $page );
+    my $original = $self->get_wiki_source( $page );
+    my $source   = $self->convert_wiki_links( $original );
+    my $html     = markdown $source;
+    
+    $original = encode_entities( $original );
     
     my ( $output, $errors ) = $self->jigsaw->render(
             $page,
             'html',
             {
-                action => 'view',
+                action => $action,
             },
             {
-                content => $content,
+                html     => $html,
+                markdown => $original,
+                page     => $page,
             }
         );
     
@@ -46,49 +56,86 @@ sub get_wiki_source {
     my $self = shift;
     my $page = shift;
     
-    my $file = sprintf "%s%s.markdown",
-                   $self->{'source'},
-                   $page,
-                   ".markdown";
+    my $file = $self->page_to_filename( $page );
+    my $io   = io $file;
     
-    my $io = io $file;
-    my $content;
+    return $io->all
+        if $io->exists && $io->is_file;
+    return;
+}
+sub convert_wiki_links {
+    my $self    = shift;
+    my $content = shift;
     
-    if ( $io->exists && $io->is_file ) {
-        my $wiki_links = qr{
-                ^
-                    (.*?)                   # $1: before the link
-                    \[ \[ \s*
-                      ( [^\]\|]+? )         # $2: the text of the link
-                      (?:
-                          \s* \| \s*
-                          (.*?)             # $3: (optional) link URL
-                      )?
-                    \s* \] \]
-            }sx;
-        
-        $content = $io->all;
-        my $output;
-        
-        while ( $content =~ s{$wiki_links}{}sx ) {
-            my $before = $1;
-            my $text   = $2;
-            my $url    = $3 // $text;
+    my $wiki_links = qr{
+            ^
+                (.*?)                   # $1: before the link
+                \[ \[ \s*
+                  ( [^\]\|]+? )         # $2: the text of the link
+                  (?:
+                      \s* \| \s*
+                      (.*?)             # $3: (optional) link URL
+                  )?
+                \s* \] \]
+        }sx;
+    
+    my $output;
+    
+    while ( $content =~ s{$wiki_links}{}sx ) {
+        my $before = $1;
+        my $text   = $2;
+        my $url    = $3 // $text;
 
-            if ( $url =~ m{\s} ) {
-                $url =~ tr/A-Z/a-z/;
-                $url =~ s{\s+}{-}gs;
-            }
-            
-            $output .= $before;
-            $output .= "[${text}](${url})";
+        if ( $url =~ m{\s} ) {
+            $url =~ tr/A-Z/a-z/;
+            $url =~ s{\s+}{-}gs;
         }
-        $output .= $content;
         
-        $content = markdown $output;
+        $output .= $before;
+        $output .= "[${text}](${url})";
     }
+    $output .= $content;
     
-    return $content;
+    return $output;
+}
+
+sub update_wiki_page {
+    my $self    = shift;
+    my $page    = shift;
+    my $content = shift;
+    my $reason  = shift // "Update $page";
+    
+    $self->write_wiki_page( $page, $content )
+        or return;
+}
+sub write_wiki_page {
+    my $self    = shift;
+    my $page    = shift;
+    my $content = shift;
+    
+    my $file = $self->page_to_filename( $page );
+    my $io   = io $file;
+    
+    my $dir = dirname $file;
+    return if -f $dir;
+    
+    mkpath $dir;
+    
+    $io->print( $content )
+        unless $io->exists && ! $io->is_file;
+}
+
+sub page_to_filename {
+    my $self = shift;
+    my $page = shift;
+    
+    $page .= "index"
+        if '/' eq substr $page, -1, 1;
+    
+    return sprintf "%s%s.markdown",
+                $self->{'source'},
+                $page,
+                ".markdown";
 }
 
 sub jigsaw {

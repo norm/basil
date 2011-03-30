@@ -50,8 +50,25 @@ sub render_wiki_page {
 
         my $request = Plack::Request->new( $env );
         my $path    = $request->path;
+        my $action  = $request->param('action');
+        my $method  = $request->method;
+        say "-> $method $path ($action)";
         
-        my $html = $basil->render_wiki_page( $path );
+        if ( 'POST' eq $method ) {
+            my $content = $request->param('content');
+            my $reason  = $request->param('reason');
+            $basil->update_wiki_page( $path, $content, $reason );
+            
+            return [
+                303,
+                [
+                    'Location' => $path,
+                ],
+                [],
+            ];
+        }
+        
+        my $html = $basil->render_wiki_page( $path, $action );
         
         return [
             200,

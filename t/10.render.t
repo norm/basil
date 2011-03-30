@@ -19,6 +19,7 @@ my $expected = <<HTML;
 
 <p>Test page.</p>
 
+<p><a href='?action=edit'>Edit this page</a></p>
 </body>
 </html>
 HTML
