@@ -1,11 +1,8 @@
 Workable:
-- use jigsaw to render templates
 - edit view
 - check modifications into git
 - list of all pages
 - list of most recent changes
-Reusable:
-- separate render_wiki_page into Wiki::Basil, or the like
 Tests:
 - test wiki links syntax
 - test page rendering

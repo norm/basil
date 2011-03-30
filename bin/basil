@@ -3,6 +3,7 @@
 use Modern::Perl;
 
 use Getopt::Long    qw( :config bundling );
+use Wiki::Basil;
 use IO::All         -utf8;
 use Plack::Builder;
 use Plack::Request;
@@ -11,11 +12,12 @@ use Pod::Usage;
 use Text::Markdown  qw( markdown );
 
 use constant OPTIONS => qw(
-      help|h
-    source|s=s
-      port|p=i
+         help|h
+       source|s=s
+    templates|t=s
+         port|p=i
 );
-use constant REQUIRED_OPTIONS => qw( source );
+use constant REQUIRED_OPTIONS => qw( source templates );
 use constant DEFAULT_PORT => 2275;
 
 
@@ -25,6 +27,10 @@ $runner->parse_options( '-p', $option{'port'} );
 
 
 
+my $basil = Wiki::Basil->new(
+        source    => $option{'source'},
+        templates => $option{'templates'},
+    );
 my $wiki_page = render_wiki_page();
 my $builder = Plack::Builder->new();
 $builder->add_middleware(
@@ -44,59 +50,16 @@ sub render_wiki_page {
 
         my $request = Plack::Request->new( $env );
         my $path    = $request->path;
-        my $file    = sprintf "%s%s.markdown",
-                          $option{'source'},
-                          $path,
-                          ".markdown";
         
-        my $io = io $file;
+        my $html = $basil->render_wiki_page( $path );
         
-        if ( $io->exists && $io->is_file ) {
-            my $wiki_links = qr{
-                    \[\[ \s*
-                      ( [^\]\|]+? )         # $1: the text of the link
-                      (?:
-                          \s* \| \s*
-                          (.*?)             # $2: (optional) link URL
-                      )?
-                    \s* \]\]
-                }x;
-            
-            my $content = $io->all;
-            
-            while ( $content =~ m{$wiki_links} ) {
-                my $text = $1;
-                my $url  = $2 // $text;
-                
-                if ( $url =~ m{\s} ) {
-                    $url =~ tr/A-Z/a-z/;
-                    $url =~ s{\s+}{-}gs;
-                }
-                
-                $content =~ s{$wiki_links}{[$text]($url)};
-            }
-            
-            return [
-                200,
-                [
-                    'Content-Type' => 'text/html',
-                ],
-                [
-                    markdown( $content ),
-                ],
-            ];
-        }
-        else {
-            return [
-                404,
-                [
-                    'Content-Type' => 'text/plain',
-                ],
-                [
-                    "$path does not exist.\n",
-                ],
-            ]
-        }
+        return [
+            200,
+            [],
+            [
+                $html,
+            ],
+        ];
     };
 }
 
